@@ -511,9 +511,10 @@ func opRandom(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	return nil, nil
 }
 
-func opGasLimit(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	scope.Stack.push(new(uint256.Int).SetUint64(interpreter.evm.Context.GasLimit))
-	return nil, nil
+func opGasLimit(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
+	v := new(uint256.Int).SetUint64(interpreter.evm.Context.GasLimit)
+	scope.Stack.push(v)
+	return nil, v.String(), nil
 }
 
 func opPop(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -521,11 +522,12 @@ func opPop(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte
 	return nil, nil
 }
 
-func opMload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opMload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	v := scope.Stack.peek()
 	offset := v.Uint64()
-	v.SetBytes(scope.Memory.GetPtr(offset, 32))
-	return nil, nil
+	data := scope.Memory.GetPtr(offset, 32)
+	v.SetBytes(data)
+	return nil, v.String(), nil
 }
 
 func opMstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -540,12 +542,12 @@ func opMstore8(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	return nil, nil
 }
 
-func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	loc := scope.Stack.peek()
 	hash := common.Hash(loc.Bytes32())
 	val := interpreter.evm.StateDB.GetState(scope.Contract.Address(), hash)
 	loc.SetBytes(val.Bytes())
-	return nil, nil
+	return nil, loc.String(), nil
 }
 
 func opSstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -588,19 +590,22 @@ func opJumpdest(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, nil
 }
 
-func opPc(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	scope.Stack.push(new(uint256.Int).SetUint64(*pc))
-	return nil, nil
+func opPc(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
+	pc_val := new(uint256.Int).SetUint64(*pc)
+	scope.Stack.push(pc_val)
+	return nil, pc_val.String(), nil
 }
 
-func opMsize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	scope.Stack.push(new(uint256.Int).SetUint64(uint64(scope.Memory.Len())))
-	return nil, nil
+func opMsize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
+	msize := new(uint256.Int).SetUint64(uint64(scope.Memory.Len()))
+	scope.Stack.push(msize)
+	return nil, msize.String(), nil
 }
 
-func opGas(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	scope.Stack.push(new(uint256.Int).SetUint64(scope.Contract.Gas))
-	return nil, nil
+func opGas(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
+	gas := new(uint256.Int).SetUint64(scope.Contract.Gas)
+	scope.Stack.push(gas)
+	return nil, gas.String(), nil
 }
 
 func opSwap1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -955,9 +960,9 @@ func opSelfdestruct6780(pc *uint64, interpreter *EVMInterpreter, scope *ScopeCon
 
 // make log instruction function
 func makeLog(size int) executionFunc {
-	return func(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	return func(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 		if interpreter.readOnly {
-			return nil, ErrWriteProtection
+			return nil, "", ErrWriteProtection
 		}
 		topics := make([]common.Hash, size)
 		stack := scope.Stack
@@ -977,28 +982,31 @@ func makeLog(size int) executionFunc {
 			BlockNumber: interpreter.evm.Context.BlockNumber.Uint64(),
 		})
 
-		return nil, nil
+		return nil, "", nil
 	}
 }
 
 // opPush1 is a specialized version of pushN
-func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	var (
 		codeLen = uint64(len(scope.Contract.Code))
 		integer = new(uint256.Int)
 	)
 	*pc += 1
+	var value *uint256.Int
 	if *pc < codeLen {
-		scope.Stack.push(integer.SetUint64(uint64(scope.Contract.Code[*pc])))
+		value = integer.SetUint64(uint64(scope.Contract.Code[*pc]))
+		scope.Stack.push(value)
 	} else {
-		scope.Stack.push(integer.Clear())
+		value = integer.Clear()
+		scope.Stack.push(value)
 	}
-	return nil, nil
+	return nil, value.String(), nil
 }
 
 // make push instruction function
 func makePush(size uint64, pushByteSize int) executionFunc {
-	return func(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	return func(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 		var (
 			codeLen = len(scope.Contract.Code)
 			start   = min(codeLen, int(*pc+1))
@@ -1012,14 +1020,14 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 		}
 		scope.Stack.push(a)
 		*pc += size
-		return nil, nil
+		return nil, a.String(), nil
 	}
 }
 
 // make dup instruction function
 func makeDup(size int64) executionFunc {
-	return func(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	return func(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 		scope.Stack.dup(int(size))
-		return nil, nil
+		return nil, "", nil
 	}
 }
