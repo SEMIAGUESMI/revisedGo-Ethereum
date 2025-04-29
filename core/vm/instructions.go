@@ -26,6 +26,7 @@ import (
 	"github.com/holiman/uint256"
 	"math"
 	"math/big"
+	"strconv"
 )
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -353,10 +354,12 @@ func opReturnDataCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeConte
 	return nil, nil
 }
 
-func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	slot := scope.Stack.peek()
-	slot.SetUint64(uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20())))
-	return nil, nil
+	codeSize := uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20()))
+	slot.SetUint64(codeSize)
+	codeSizeStr := strconv.FormatUint(codeSize, 10)
+	return nil, codeSizeStr, nil
 }
 
 func opCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
@@ -382,7 +385,7 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, codeInt.String(), nil
 }
 
-func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	var (
 		stack      = scope.Stack
 		a          = stack.pop()
@@ -398,8 +401,8 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	code := interpreter.evm.StateDB.GetCode(addr)
 	codeCopy := getData(code, uint64CodeOffset, length.Uint64())
 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
-
-	return nil, nil
+	codecopy := new(big.Int).SetBytes(codeCopy)
+	return nil, codecopy.String(), nil
 }
 
 // opExtCodeHash returns the code hash of a specified account.
@@ -439,10 +442,10 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	return nil, nil
 }
 
-func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	v, _ := uint256.FromBig(interpreter.evm.GasPrice)
 	scope.Stack.push(v)
-	return nil, nil
+	return nil, v.Dec(), nil
 }
 
 func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
