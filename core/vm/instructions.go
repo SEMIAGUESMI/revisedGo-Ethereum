@@ -448,12 +448,12 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, v.Dec(), nil
 }
 
-func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	num := scope.Stack.peek()
 	num64, overflow := num.Uint64WithOverflow()
 	if overflow {
 		num.Clear()
-		return nil, nil
+		return nil, "", nil
 	}
 
 	var upper, lower uint64
@@ -463,41 +463,46 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	} else {
 		lower = upper - 256
 	}
+	var hash [32]byte
 	if num64 >= lower && num64 < upper {
-		res := interpreter.evm.Context.GetHash(num64)
+		hash = interpreter.evm.Context.GetHash(num64)
 		if witness := interpreter.evm.StateDB.Witness(); witness != nil {
 			witness.AddBlockHash(num64)
 		}
 		if tracer := interpreter.evm.Config.Tracer; tracer != nil && tracer.OnBlockHashRead != nil {
-			tracer.OnBlockHashRead(num64, res)
+			tracer.OnBlockHashRead(num64, hash)
 		}
-		num.SetBytes(res[:])
+		num.SetBytes(hash[:])
 	} else {
 		num.Clear()
+		return nil, "0x0", nil
 	}
-	return nil, nil
+	return nil, "0x" + hex.EncodeToString(hash[:]), nil
 }
 
-func opCoinbase(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	scope.Stack.push(new(uint256.Int).SetBytes(interpreter.evm.Context.Coinbase.Bytes()))
-	return nil, nil
+func opCoinbase(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
+	address := new(uint256.Int).SetBytes(interpreter.evm.Context.Coinbase.Bytes())
+	scope.Stack.push(address)
+	addressHex := "0x" + hex.EncodeToString(address.Bytes())
+	return nil, addressHex, nil
 }
 
-func opTimestamp(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	scope.Stack.push(new(uint256.Int).SetUint64(interpreter.evm.Context.Time))
-	return nil, nil
+func opTimestamp(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
+	timestamp := new(uint256.Int).SetUint64(interpreter.evm.Context.Time)
+	scope.Stack.push(timestamp)
+	return nil, timestamp.String(), nil
 }
 
-func opNumber(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opNumber(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	v, _ := uint256.FromBig(interpreter.evm.Context.BlockNumber)
 	scope.Stack.push(v)
-	return nil, nil
+	return nil, v.String(), nil
 }
 
-func opDifficulty(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opDifficulty(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	v, _ := uint256.FromBig(interpreter.evm.Context.Difficulty)
 	scope.Stack.push(v)
-	return nil, nil
+	return nil, v.String(), nil
 }
 
 func opRandom(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
