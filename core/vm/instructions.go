@@ -18,6 +18,7 @@ package vm
 
 import (
 	"encoding/hex"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -688,9 +689,9 @@ func opSwap16(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	return nil, nil
 }
 
-func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	if interpreter.readOnly {
-		return nil, ErrWriteProtection
+		return nil, "", ErrWriteProtection
 	}
 	var (
 		value        = scope.Stack.pop()
@@ -712,6 +713,7 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	// homestead we must check for CodeStoreOutOfGasError (homestead only
 	// rule) and treat as an error, if the ruleset is frontier we must
 	// ignore this error and pretend the operation was successful.
+
 	if interpreter.evm.chainRules.IsHomestead && suberr == ErrCodeStoreOutOfGas {
 		stackvalue.Clear()
 	} else if suberr != nil && suberr != ErrCodeStoreOutOfGas {
@@ -725,10 +727,10 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 
 	if suberr == ErrExecutionReverted {
 		interpreter.returnData = res // set REVERT data to return data buffer
-		return res, nil
+		return res, stackvalue.String(), nil
 	}
 	interpreter.returnData = nil // clear dirty return data buffer
-	return nil, nil
+	return nil, stackvalue.String(), nil
 }
 
 func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -767,7 +769,7 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	return nil, nil
 }
 
-func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	stack := scope.Stack
 	// Pop gas. The actual gas in interpreter.evm.callGasTemp.
 	// We can use this as a temporary value
@@ -780,7 +782,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
 
 	if interpreter.readOnly && !value.IsZero() {
-		return nil, ErrWriteProtection
+		return nil, "", ErrWriteProtection
 	}
 	if !value.IsZero() {
 		gas += params.CallStipend
@@ -793,6 +795,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 		temp.SetOne()
 	}
 	stack.push(&temp)
+
 	if err == nil || err == ErrExecutionReverted {
 		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
 	}
@@ -800,10 +803,13 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
 	interpreter.returnData = ret
-	return ret, nil
+	returncall := new(big.Int)
+	returncall.SetBytes(ret)
+	vandal := fmt.Sprintf("%s,%s", temp.String(), returncall.String())
+	return ret, vandal, nil
 }
 
-func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	stack := scope.Stack
 	// We use it as a temporary value
@@ -833,10 +839,13 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
 	interpreter.returnData = ret
-	return ret, nil
+	returncall := new(big.Int)
+	returncall.SetBytes(ret)
+	vandal := fmt.Sprintf("%s,%s", temp.String(), returncall.String())
+	return ret, vandal, nil
 }
 
-func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	stack := scope.Stack
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	// We use it as a temporary value
@@ -862,10 +871,13 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
 	interpreter.returnData = ret
-	return ret, nil
+	returncall := new(big.Int)
+	returncall.SetBytes(ret)
+	vandal := fmt.Sprintf("%s,%s", temp.String(), returncall.String())
+	return ret, vandal, nil
 }
 
-func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	stack := scope.Stack
 	// We use it as a temporary value
@@ -891,14 +903,17 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
 	interpreter.returnData = ret
-	return ret, nil
+	returncall := new(big.Int)
+	returncall.SetBytes(ret)
+	vandal := fmt.Sprintf("%s,%s", temp.String(), returncall.String())
+	return ret, vandal, nil
 }
 
-func opReturn(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opReturn(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	offset, size := scope.Stack.pop(), scope.Stack.pop()
 	ret := scope.Memory.GetCopy(offset.Uint64(), size.Uint64())
-
-	return ret, errStopToken
+	returnStr := new(big.Int).SetBytes(ret).String()
+	return ret, returnStr, errStopToken
 }
 
 func opRevert(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -917,7 +932,7 @@ func opStop(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	return nil, errStopToken
 }
 
-func opSelfdestruct(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opSelfdestruct(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, string, error) {
 	if interpreter.readOnly {
 		return nil, ErrWriteProtection
 	}
@@ -933,7 +948,7 @@ func opSelfdestruct(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 			tracer.OnExit(interpreter.evm.depth, []byte{}, 0, nil, false)
 		}
 	}
-	return nil, errStopToken
+	return nil, scope.Contract.Address().String(), errStopToken
 }
 
 func opSelfdestruct6780(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
