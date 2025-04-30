@@ -226,7 +226,7 @@ func opSAR(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte
 			// Max negative shift: all bits set
 			value.SetAllOne()
 		}
-		return nil, nil
+		return nil, "", nil
 	}
 	n := uint(shift.Uint64())
 	value.SRsh(value, n)
